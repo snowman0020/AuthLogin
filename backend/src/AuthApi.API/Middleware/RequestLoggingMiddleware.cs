@@ -81,7 +81,7 @@ public class RequestLoggingMiddleware(
             // Never crash the app because of logging
             var loggerFactory = ctx.RequestServices.GetService<ILoggerFactory>();
             var fallback = loggerFactory?.CreateLogger<RequestLoggingMiddleware>();
-            fallback?.LogError(ex, "Failed to write audit log to MongoDB");
+            fallback?.LogError(ex, "Failed to write audit log to database");
         }
     }
 
