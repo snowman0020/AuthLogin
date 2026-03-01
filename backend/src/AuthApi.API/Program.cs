@@ -1,4 +1,5 @@
 using AuthApi.API.Authentication;
+using AuthApi.API.Middleware;
 using AuthApi.Application.Services;
 using AuthApi.Domain.Interfaces.Repositories;
 using AuthApi.Domain.Interfaces.Services;
@@ -31,6 +32,7 @@ builder.Services.AddSingleton<MongoDbContext>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
+builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
 
 // ─── Services (Business Logic Layer) ──────────────────────────────────────────
 builder.Services.AddScoped<IJwtService, JwtService>();
@@ -148,6 +150,10 @@ if (app.Environment.IsDevelopment())
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
+
+// ─── MongoDB Request Logging Middleware ────────────────────────────────────────
+app.UseRequestLogging();
+
 app.MapControllers();
 
 app.Run();

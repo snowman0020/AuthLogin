@@ -23,6 +23,7 @@ public class MongoDbContext
     public IMongoCollection<User> Users => _db.GetCollection<User>("users");
     public IMongoCollection<RefreshToken> RefreshTokens => _db.GetCollection<RefreshToken>("refreshTokens");
     public IMongoCollection<ApiKey> ApiKeys => _db.GetCollection<ApiKey>("apiKeys");
+    public IMongoCollection<AuditLog> AuditLogs => _db.GetCollection<AuditLog>("auditLogs");
 
     private void EnsureIndexes()
     {
@@ -49,6 +50,16 @@ public class MongoDbContext
                 new CreateIndexOptions { Unique = true }),
             new CreateIndexModel<ApiKey>(
                 Builders<ApiKey>.IndexKeys.Ascending(ak => ak.UserId))
+        ]);
+
+        // AuditLogs: index by createdAt (desc) + userId for fast queries
+        AuditLogs.Indexes.CreateMany([
+            new CreateIndexModel<AuditLog>(
+                Builders<AuditLog>.IndexKeys.Descending(l => l.CreatedAt)),
+            new CreateIndexModel<AuditLog>(
+                Builders<AuditLog>.IndexKeys.Ascending(l => l.UserId)),
+            new CreateIndexModel<AuditLog>(
+                Builders<AuditLog>.IndexKeys.Ascending(l => l.Path))
         ]);
     }
 }
