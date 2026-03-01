@@ -1,23 +1,36 @@
 using AuthApi.Domain.Entities;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
+using System.Security.Authentication;
 
 namespace AuthApi.Infrastructure.Data;
 
 public class MongoDbContext
 {
     private readonly IMongoDatabase _db;
+    private readonly ILogger<MongoDbContext>? _logger;
 
-    public MongoDbContext(IConfiguration config)
+    public MongoDbContext(IConfiguration config, ILogger<MongoDbContext>? logger = null)
     {
+        _logger = logger;
+
         var uri = config["MongoDB:Uri"]
             ?? throw new InvalidOperationException("MongoDB:Uri is not configured");
         var dbName = config["MongoDB:DatabaseName"] ?? "authdb";
 
-        var client = new MongoClient(uri);
-        _db = client.GetDatabase(dbName);
+        // Fix: Explicit TLS 1.2/1.3 settings for Windows Schannel compatibility
+        var settings = MongoClientSettings.FromConnectionString(uri);
+        settings.SslSettings = new SslSettings
+        {
+            EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
+        };
+        settings.ServerSelectionTimeout = TimeSpan.FromSeconds(10);
 
-        EnsureIndexes();
+        _db = new MongoClient(settings).GetDatabase(dbName);
+
+        // Fix: Run index creation in background — never block the constructor
+        _ = Task.Run(EnsureIndexesAsync);
     }
 
     public IMongoCollection<User> Users => _db.GetCollection<User>("users");
@@ -25,41 +38,51 @@ public class MongoDbContext
     public IMongoCollection<ApiKey> ApiKeys => _db.GetCollection<ApiKey>("apiKeys");
     public IMongoCollection<AuditLog> AuditLogs => _db.GetCollection<AuditLog>("auditLogs");
 
-    private void EnsureIndexes()
+    // Called externally (e.g. IHostedService) to await completion if needed
+    public async Task EnsureIndexesAsync()
     {
-        Users.Indexes.CreateMany([
-            new CreateIndexModel<User>(
-                Builders<User>.IndexKeys.Ascending(u => u.Email),
-                new CreateIndexOptions { Unique = true }),
-            new CreateIndexModel<User>(
-                Builders<User>.IndexKeys.Ascending(u => u.Username),
-                new CreateIndexOptions { Unique = true })
-        ]);
+        try
+        {
+            await Users.Indexes.CreateManyAsync([
+                new CreateIndexModel<User>(
+                    Builders<User>.IndexKeys.Ascending(u => u.Email),
+                    new CreateIndexOptions { Unique = true }),
+                new CreateIndexModel<User>(
+                    Builders<User>.IndexKeys.Ascending(u => u.Username),
+                    new CreateIndexOptions { Unique = true })
+            ]);
 
-        RefreshTokens.Indexes.CreateMany([
-            new CreateIndexModel<RefreshToken>(
-                Builders<RefreshToken>.IndexKeys.Ascending(rt => rt.Token),
-                new CreateIndexOptions { Unique = true }),
-            new CreateIndexModel<RefreshToken>(
-                Builders<RefreshToken>.IndexKeys.Ascending(rt => rt.UserId))
-        ]);
+            await RefreshTokens.Indexes.CreateManyAsync([
+                new CreateIndexModel<RefreshToken>(
+                    Builders<RefreshToken>.IndexKeys.Ascending(rt => rt.Token),
+                    new CreateIndexOptions { Unique = true }),
+                new CreateIndexModel<RefreshToken>(
+                    Builders<RefreshToken>.IndexKeys.Ascending(rt => rt.UserId))
+            ]);
 
-        ApiKeys.Indexes.CreateMany([
-            new CreateIndexModel<ApiKey>(
-                Builders<ApiKey>.IndexKeys.Ascending(ak => ak.Key),
-                new CreateIndexOptions { Unique = true }),
-            new CreateIndexModel<ApiKey>(
-                Builders<ApiKey>.IndexKeys.Ascending(ak => ak.UserId))
-        ]);
+            await ApiKeys.Indexes.CreateManyAsync([
+                new CreateIndexModel<ApiKey>(
+                    Builders<ApiKey>.IndexKeys.Ascending(ak => ak.Key),
+                    new CreateIndexOptions { Unique = true }),
+                new CreateIndexModel<ApiKey>(
+                    Builders<ApiKey>.IndexKeys.Ascending(ak => ak.UserId))
+            ]);
 
-        // AuditLogs: index by createdAt (desc) + userId for fast queries
-        AuditLogs.Indexes.CreateMany([
-            new CreateIndexModel<AuditLog>(
-                Builders<AuditLog>.IndexKeys.Descending(l => l.CreatedAt)),
-            new CreateIndexModel<AuditLog>(
-                Builders<AuditLog>.IndexKeys.Ascending(l => l.UserId)),
-            new CreateIndexModel<AuditLog>(
-                Builders<AuditLog>.IndexKeys.Ascending(l => l.Path))
-        ]);
+            await AuditLogs.Indexes.CreateManyAsync([
+                new CreateIndexModel<AuditLog>(
+                    Builders<AuditLog>.IndexKeys.Descending(l => l.CreatedAt)),
+                new CreateIndexModel<AuditLog>(
+                    Builders<AuditLog>.IndexKeys.Ascending(l => l.UserId)),
+                new CreateIndexModel<AuditLog>(
+                    Builders<AuditLog>.IndexKeys.Ascending(l => l.Path))
+            ]);
+
+            _logger?.LogInformation("MongoDB indexes ensured successfully");
+        }
+        catch (Exception ex)
+        {
+            // Log but never crash the app — indexes can be created later
+            _logger?.LogWarning(ex, "MongoDB index creation failed: {Message}", ex.Message);
+        }
     }
 }
