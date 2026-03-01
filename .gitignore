@@ -1,0 +1,23 @@
+# ─── .NET ───────────────────────────────────────────
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.db
+*.db-journal
+# Secrets / env (never commit real secrets!)
+backend/.env
+backend/src/AuthApi.API/appsettings.Development.json
+
+# ─── Node / Nuxt ────────────────────────────────────
+node_modules/
+.nuxt/
+.output/
+dist/
+.cache/
+frontend/.env
+
+# ─── OS ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
