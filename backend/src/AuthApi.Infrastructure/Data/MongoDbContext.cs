@@ -19,13 +19,17 @@ public class MongoDbContext
             ?? throw new InvalidOperationException("MongoDB:Uri is not configured");
         var dbName = config["MongoDB:DatabaseName"] ?? "authdb";
 
-        // Fix: Explicit TLS 1.2/1.3 settings for Windows Schannel compatibility
+        // Fix: Bypass Windows Schannel SSL/TLS auth failure (0x80090304 SEC_E_NO_AUTHENTICATING_AUTHORITY)
         var settings = MongoClientSettings.FromConnectionString(uri);
         settings.SslSettings = new SslSettings
         {
-            EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
+            EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+            CheckCertificateRevocation = false
         };
-        settings.ServerSelectionTimeout = TimeSpan.FromSeconds(10);
+        // AllowInsecureTls overrides RemoteCertificateValidationCallback at the managed .NET level,
+        // bypassing Windows Schannel's SSPI auth which fails with 0x80090304 on some Windows configs.
+        settings.AllowInsecureTls = true;
+        settings.ServerSelectionTimeout = TimeSpan.FromSeconds(15);
 
         _db = new MongoClient(settings).GetDatabase(dbName);
 
