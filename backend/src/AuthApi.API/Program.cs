@@ -7,6 +7,7 @@ using AuthApi.Infrastructure.Data;
 using AuthApi.Infrastructure.Repositories;
 using DotNetEnv;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
@@ -20,13 +21,13 @@ var builder = WebApplication.CreateBuilder(args);
 // Inject env vars into config
 builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
 {
-    ["MongoDB:Uri"]          = Environment.GetEnvironmentVariable("MONGODB_URI")          ?? builder.Configuration["MongoDB:Uri"],
-    ["Jwt:Secret"]           = Environment.GetEnvironmentVariable("JWT_SECRET")           ?? builder.Configuration["Jwt:Secret"],
-    ["Cors:AllowedOrigins"]  = Environment.GetEnvironmentVariable("FRONTEND_URL")         ?? builder.Configuration["Cors:AllowedOrigins"],
+    ["Jwt:Secret"]          = Environment.GetEnvironmentVariable("JWT_SECRET")   ?? builder.Configuration["Jwt:Secret"],
+    ["Cors:AllowedOrigins"] = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? builder.Configuration["Cors:AllowedOrigins"],
 });
 
-// ─── MongoDB + Infrastructure ─────────────────────────────────────────────────
-builder.Services.AddSingleton<MongoDbContext>();
+// ─── SQLite + EF Core ──────────────────────────────────────────────────────────
+var connStr = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=auth.db";
+builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite(connStr));
 
 // ─── Repositories (Data Access Layer) ─────────────────────────────────────────
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -92,7 +93,7 @@ builder.Services.AddSwaggerGen(opt =>
     {
         Title = "Auth API",
         Version = "v1",
-        Description = "Clean Architecture Auth API — JWT + Refresh Token + API Key + MongoDB"
+        Description = "Clean Architecture Auth API — JWT + Refresh Token + API Key + SQLite"
     });
 
     // JWT Bearer
@@ -137,6 +138,13 @@ builder.Services.AddSwaggerGen(opt =>
 // ─── Build + Pipeline ──────────────────────────────────────────────────────────
 var app = builder.Build();
 
+// ─── Auto-create SQLite DB on startup ─────────────────────────────────────────
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureCreated();
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -151,7 +159,7 @@ app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ─── MongoDB Request Logging Middleware ────────────────────────────────────────
+// ─── Request Logging Middleware ────────────────────────────────────────────────
 app.UseRequestLogging();
 
 app.MapControllers();
